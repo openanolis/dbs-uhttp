@@ -411,6 +411,18 @@ mod tests {
             RequestError::InvalidHttpMethod("Unsupported HTTP method.")
         );
 
+        // POST method was supported
+        let expected_request_line = RequestLine {
+            http_version: Version::Http10,
+            method: Method::Post,
+            uri: Uri::new("http://localhost/home"),
+        };
+        let request_line = b"POST http://localhost/home HTTP/1.0";
+        assert_eq!(
+            RequestLine::try_from(request_line).unwrap(),
+            expected_request_line,
+        );
+
         // Test for invalid uri.
         let request_line = b"GET  HTTP/1.0";
         assert_eq!(
@@ -505,8 +517,8 @@ mod tests {
         assert_eq!(request.uri(), &Uri::new("http://localhost/home"));
         assert_eq!(request.http_version(), Version::Http11);
         assert_eq!(request.method(), Method::Patch);
-        assert_eq!(request.headers.chunked(), true);
-        assert_eq!(request.headers.expect(), true);
+        assert!(request.headers.chunked());
+        assert!(request.headers.expect());
         assert_eq!(request.headers.content_length(), 26);
         assert_eq!(
             request.body.unwrap().body,
@@ -539,8 +551,8 @@ mod tests {
         assert_eq!(request.uri(), &Uri::new("http://localhost/"));
         assert_eq!(request.http_version(), Version::Http10);
         assert_eq!(request.method(), Method::Get);
-        assert_eq!(request.headers.chunked(), false);
-        assert_eq!(request.headers.expect(), false);
+        assert!(!request.headers.chunked());
+        assert!(!request.headers.expect());
         assert_eq!(request.headers.content_length(), 0);
         assert!(request.body.is_none());
 

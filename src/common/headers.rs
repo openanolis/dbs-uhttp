@@ -446,8 +446,8 @@ mod tests {
     fn test_default() {
         let headers = Headers::default();
         assert_eq!(headers.content_length(), 0);
-        assert_eq!(headers.chunked(), false);
-        assert_eq!(headers.expect(), false);
+        assert!(!headers.chunked());
+        assert!(!headers.expect());
         assert_eq!(headers.accept(), MediaType::PlainText);
         assert_eq!(headers.custom_entries(), &HashMap::default());
     }
