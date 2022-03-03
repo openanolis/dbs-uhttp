@@ -232,6 +232,8 @@ pub enum Method {
     Put,
     /// PATCH Method.
     Patch,
+    /// Delete Method.
+    Delete,
 }
 
 impl Method {
@@ -247,6 +249,7 @@ impl Method {
             b"GET" => Ok(Self::Get),
             b"PUT" => Ok(Self::Put),
             b"PATCH" => Ok(Self::Patch),
+            b"DELETE" => Ok(Self::Delete),
             _ => Err(RequestError::InvalidHttpMethod("Unsupported HTTP method.")),
         }
     }
@@ -257,6 +260,7 @@ impl Method {
             Self::Get => b"GET",
             Self::Put => b"PUT",
             Self::Patch => b"PATCH",
+            Self::Delete => b"DELETE",
         }
     }
 
@@ -266,6 +270,7 @@ impl Method {
             Method::Get => "GET",
             Method::Put => "PUT",
             Method::Patch => "PATCH",
+            Method::Delete => "DELETE",
         }
     }
 }
@@ -369,11 +374,13 @@ mod tests {
         assert_eq!(Method::Get.raw(), b"GET");
         assert_eq!(Method::Put.raw(), b"PUT");
         assert_eq!(Method::Patch.raw(), b"PATCH");
+        assert_eq!(Method::Delete.raw(), b"DELETE");
 
         // Tests for try_from
         assert_eq!(Method::try_from(b"GET").unwrap(), Method::Get);
         assert_eq!(Method::try_from(b"PUT").unwrap(), Method::Put);
         assert_eq!(Method::try_from(b"PATCH").unwrap(), Method::Patch);
+        assert_eq!(Method::try_from(b"DELETE").unwrap(), Method::Delete);
         assert_eq!(
             Method::try_from(b"POST").unwrap_err(),
             RequestError::InvalidHttpMethod("Unsupported HTTP method.")
@@ -558,5 +565,8 @@ mod tests {
 
         let val = Method::Patch;
         assert_eq!(val.to_str(), "PATCH");
+
+        let val = Method::Delete;
+        assert_eq!(val.to_str(), "DELETE");
     }
 }
