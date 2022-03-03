@@ -1,4 +1,4 @@
-# db-uhttp
+# dbs-uhttp
 
 This is a minimal implementation of the
 [HTTP/1.0](https://tools.ietf.org/html/rfc1945) and
@@ -8,18 +8,18 @@ implementation is stateless thus it does not support chunking or compression.
 
 ## Acknowledgement
 
-db-uhttp is forked from Fireckracker's [micro-http](https://github.com/firecracker-microvm/micro-http). And we switch from the usage of vmm-sys-util::Poll to MIO in order to support cross-platform compatibility such as macOS.
+dbs-uhttp is forked from Fireckracker's [micro-http](https://github.com/firecracker-microvm/micro-http). And we switch from the usage of vmm-sys-util::Poll to MIO in order to support cross-platform compatibility such as macOS.
 
 The micro-http implementation is used in production by Firecracker.
 
 ## Contributing
 
-To contribute to db-uhttp, checkout the
+To contribute to dbs-uhttp, checkout the
 [contribution guidelines](CONTRIBUTING.md).
 
 ## Releases
 
-New db-uhttp versions are released via the GitHub repository releases page. A
+New dbs-uhttp versions are released via the GitHub repository releases page. A
 history of changes is recorded in our [changelog](CHANGELOG.md).
 
 ## Policy for Security Disclosures
