@@ -228,6 +228,10 @@ impl Body {
 pub enum Method {
     /// GET Method.
     Get,
+    /// HEAD Method.
+    Head,
+    /// POST Method.
+    Post,
     /// PUT Method.
     Put,
     /// PATCH Method.
@@ -247,6 +251,8 @@ impl Method {
     pub fn try_from(bytes: &[u8]) -> Result<Self, RequestError> {
         match bytes {
             b"GET" => Ok(Self::Get),
+            b"HEAD" => Ok(Self::Head),
+            b"POST" => Ok(Self::Post),
             b"PUT" => Ok(Self::Put),
             b"PATCH" => Ok(Self::Patch),
             b"DELETE" => Ok(Self::Delete),
@@ -258,6 +264,8 @@ impl Method {
     pub fn raw(self) -> &'static [u8] {
         match self {
             Self::Get => b"GET",
+            Self::Head => b"HEAD",
+            Self::Post => b"POST",
             Self::Put => b"PUT",
             Self::Patch => b"PATCH",
             Self::Delete => b"DELETE",
@@ -268,6 +276,8 @@ impl Method {
     pub fn to_str(self) -> &'static str {
         match self {
             Method::Get => "GET",
+            Method::Head => "HEAD",
+            Method::Post => "POST",
             Method::Put => "PUT",
             Method::Patch => "PATCH",
             Method::Delete => "DELETE",
@@ -372,17 +382,21 @@ mod tests {
     fn test_method() {
         // Test for raw
         assert_eq!(Method::Get.raw(), b"GET");
+        assert_eq!(Method::Head.raw(), b"HEAD");
+        assert_eq!(Method::Post.raw(), b"POST");
         assert_eq!(Method::Put.raw(), b"PUT");
         assert_eq!(Method::Patch.raw(), b"PATCH");
         assert_eq!(Method::Delete.raw(), b"DELETE");
 
         // Tests for try_from
         assert_eq!(Method::try_from(b"GET").unwrap(), Method::Get);
+        assert_eq!(Method::try_from(b"HEAD").unwrap(), Method::Head);
+        assert_eq!(Method::try_from(b"POST").unwrap(), Method::Post);
         assert_eq!(Method::try_from(b"PUT").unwrap(), Method::Put);
         assert_eq!(Method::try_from(b"PATCH").unwrap(), Method::Patch);
         assert_eq!(Method::try_from(b"DELETE").unwrap(), Method::Delete);
         assert_eq!(
-            Method::try_from(b"POST").unwrap_err(),
+            Method::try_from(b"CONNECT").unwrap_err(),
             RequestError::InvalidHttpMethod("Unsupported HTTP method.")
         );
     }
@@ -559,6 +573,12 @@ mod tests {
     fn test_method_to_str() {
         let val = Method::Get;
         assert_eq!(val.to_str(), "GET");
+
+        let val = Method::Head;
+        assert_eq!(val.to_str(), "HEAD");
+
+        let val = Method::Post;
+        assert_eq!(val.to_str(), "POST");
 
         let val = Method::Put;
         assert_eq!(val.to_str(), "PUT");
