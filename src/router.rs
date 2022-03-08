@@ -62,8 +62,8 @@ impl<T: Send> HttpRoutes<T> {
     /// # Examples
     ///
     /// ```
-    /// extern crate micro_http;
-    /// use micro_http::{
+    /// extern crate dbs_uhttp;
+    /// use dbs_uhttp::{
     ///     EndpointHandler, HttpRoutes, Method, StatusCode, Request, Response, Version
     /// };
     ///

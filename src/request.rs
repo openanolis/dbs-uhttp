@@ -182,7 +182,7 @@ impl Request {
     /// # Examples
     ///
     /// ```
-    /// use micro_http::Request;
+    /// use dbs_uhttp::Request;
     ///
     /// let max_request_len = 2000;
     /// let request_bytes = b"GET http://localhost/home HTTP/1.0\r\n\r\n";

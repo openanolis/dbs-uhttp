@@ -192,7 +192,7 @@ impl Display for ServerError {
 ///
 /// ## Examples
 /// ```
-/// use micro_http::Body;
+/// use dbs_uhttp::Body;
 /// let body = Body::new("This is a test body.".to_string());
 /// assert_eq!(body.raw(), b"This is a test body.");
 /// assert_eq!(body.len(), 20);
@@ -291,7 +291,7 @@ impl Method {
 ///
 /// # Examples
 /// ```
-/// use micro_http::Version;
+/// use dbs_uhttp::Version;
 /// let version = Version::try_from(b"HTTP/1.1");
 /// assert!(version.is_ok());
 ///

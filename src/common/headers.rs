@@ -128,7 +128,7 @@ impl Headers {
     /// # Examples
     ///
     /// ```
-    /// use micro_http::Headers;
+    /// use dbs_uhttp::Headers;
     ///
     /// let mut request_header = Headers::default();
     /// assert!(request_header.parse_header_line(b"Content-Length: 24").is_ok());
@@ -261,7 +261,7 @@ impl Headers {
     /// # Examples
     ///
     /// ```
-    /// use micro_http::Headers;
+    /// use dbs_uhttp::Headers;
     ///
     /// let request_headers = Headers::try_from(b"Content-Length: 55\r\n\r\n");
     /// ```
@@ -323,7 +323,7 @@ impl Encoding {
     /// # Examples
     ///
     /// ```
-    /// use micro_http::Encoding;
+    /// use dbs_uhttp::Encoding;
     ///
     /// assert!(Encoding::try_from(b"deflate").is_ok());
     /// assert!(Encoding::try_from(b"identity;q=0").is_err());
@@ -389,7 +389,7 @@ impl MediaType {
     /// # Examples
     ///
     /// ```
-    /// use micro_http::MediaType;
+    /// use dbs_uhttp::MediaType;
     ///
     /// assert!(MediaType::try_from(b"application/json").is_ok());
     /// assert!(MediaType::try_from(b"application/json2").is_err());
@@ -412,7 +412,7 @@ impl MediaType {
     /// # Examples
     ///
     /// ```
-    /// use micro_http::MediaType;
+    /// use dbs_uhttp::MediaType;
     ///
     /// let media_type = MediaType::ApplicationJson;
     /// assert_eq!(media_type.as_str(), "application/json");
