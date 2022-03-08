@@ -1,12 +1,23 @@
-use crate::common::{SysError, SysResult};
-#[cfg(target_os = "linux")]
-use libc::MSG_NOSIGNAL;
-use libc::{self, c_void, cmsghdr, iovec, msghdr, recvmsg, sendmsg, SCM_RIGHTS, SOL_SOCKET};
+// Copyright 2022 Ant Group. All rights reserved.
+// Copyright 2020 Alibaba Cloud. All Rights Reserved.
+//
+// Copyright 2017 The Chromium OS Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the THIRD-PARTY file.
+
+/* Copied from the crosvm Project, commit 186eb8b */
+
 use std::fs::File;
 use std::mem::size_of;
 use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::net::{UnixDatagram, UnixStream};
 use std::ptr;
+
+#[cfg(target_os = "linux")]
+use libc::MSG_NOSIGNAL;
+use libc::{self, c_void, cmsghdr, iovec, msghdr, recvmsg, sendmsg, SCM_RIGHTS, SOL_SOCKET};
+
+use crate::common::{SysError, SysResult};
 
 // Each of the following macros performs the same function as their C counterparts. They are each
 // macros because they are used to size statically allocated arrays.
