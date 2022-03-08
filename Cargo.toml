@@ -7,4 +7,7 @@ edition = "2018"
 
 [dependencies]
 libc = ">=0.2.39"
+mio = { version = "0.8.0", features = ["os-ext", "os-poll"]}
+
+[dev-dependencies]
 vmm-sys-util = ">=0.6.1"

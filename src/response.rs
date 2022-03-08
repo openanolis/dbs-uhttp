@@ -396,7 +396,7 @@ mod tests {
 
         let mut response_buf: [u8; 123] = [0; 123];
         assert!(response.write_all(&mut response_buf.as_mut()).is_ok());
-        assert!(response_buf.as_ref() == expected_response.as_bytes());
+        assert_eq!(response_buf.as_ref(), expected_response.as_bytes());
     }
 
     #[test]
