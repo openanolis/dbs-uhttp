@@ -1,8 +1,11 @@
 [package]
-name = "micro_http"
+name = "dbs-uhttp"
 version = "0.1.0"
 license = "Apache-2.0"
-authors = ["Amazon Firecracker team <firecracker-devel@amazon.com>"]
+authors = [
+    "Amazon Firecracker team <firecracker-devel@amazon.com>",
+    "Alibaba Dragonball Team"
+]
 edition = "2018"
 
 [dependencies]

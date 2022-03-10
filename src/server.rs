@@ -235,7 +235,7 @@ impl<T: Read + Write + ScmSocket> ClientConnection<T> {
 /// ## Starting and running the server
 ///
 /// ```
-/// use micro_http::{HttpServer, Response, StatusCode};
+/// use dbs_uhttp::{HttpServer, Response, StatusCode};
 ///
 /// let path_to_socket = "/tmp/example.sock";
 /// std::fs::remove_file(path_to_socket).unwrap_or_default();
@@ -485,7 +485,7 @@ impl HttpServer {
     /// ```
     /// use std::os::unix::io::AsRawFd;
     ///
-    /// use micro_http::{HttpServer, Response, StatusCode};
+    /// use dbs_uhttp::{HttpServer, Response, StatusCode};
     /// use vmm_sys_util::epoll;
     ///
     /// // Create our epoll manager.

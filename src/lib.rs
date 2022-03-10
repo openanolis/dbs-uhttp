@@ -11,7 +11,7 @@
 //! compression.
 //!
 //! ## Supported Headers
-//! The **micro_http** crate has support for parsing the following **Request**
+//! The **dbs_uhttp** crate has support for parsing the following **Request**
 //! headers:
 //! - Content-Length
 //! - Expect
@@ -45,7 +45,7 @@
 //!
 //! ## Example for parsing an HTTP Request from a slice
 //! ```
-//! use micro_http::{Request, Version};
+//! use dbs_uhttp::{Request, Version};
 //!
 //! let request_bytes = b"GET http://localhost/home HTTP/1.0\r\n\r\n";
 //! let http_request = Request::try_from(request_bytes, None).unwrap();
@@ -55,7 +55,7 @@
 //!
 //! ## Example for creating an HTTP Response
 //! ```
-//! use micro_http::{Body, MediaType, Response, StatusCode, Version};
+//! use dbs_uhttp::{Body, MediaType, Response, StatusCode, Version};
 //!
 //! let mut response = Response::new(Version::Http10, StatusCode::OK);
 //! let body = String::from("This is a test");
@@ -81,7 +81,7 @@
 //! ## Example for using the server
 //!
 //! ```
-//! use micro_http::{HttpServer, Response, StatusCode};
+//! use dbs_uhttp::{HttpServer, Response, StatusCode};
 //!
 //! let path_to_socket = "/tmp/example.sock";
 //! std::fs::remove_file(path_to_socket).unwrap_or_default();
