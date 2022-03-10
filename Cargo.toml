@@ -6,6 +6,8 @@ authors = [
     "Amazon Firecracker team <firecracker-devel@amazon.com>",
     "Alibaba Dragonball Team"
 ]
+description = "A lightweight implementation of HTTP/1.0 and HTTP/1.1"
+repository = "https://github.com/openanolis/dbs-uhttp"
 edition = "2018"
 
 [dependencies]
