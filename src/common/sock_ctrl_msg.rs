@@ -51,29 +51,6 @@ fn CMSG_DATA(cmsg_buffer: *mut libc::cmsghdr) -> *mut RawFd {
     cmsg_buffer.wrapping_offset(1) as *mut RawFd
 }
 
-// #[cfg(all(target_os="linux", not(target_env = "musl")))]
-// macro_rules! CMSG_LEN {
-//     ($len:expr) => {
-//         size_of::<cmsghdr>() + $len
-//     };
-// }
-
-// #[cfg(target_os = "macos")]
-// macro_rules! CMSG_LEN {
-//     ($len:expr) => {
-//         size_of::<cmsghdr>() as u32 + (($len) as u32)
-//     };
-// }
-
-// #[cfg(all(target_os="linux", target_env = "musl"))]
-// macro_rules! CMSG_LEN {
-//     ($len:expr) => {{
-//         let sz = size_of::<cmsghdr>() + ($len);
-//         assert!(sz <= (std::u32::MAX as usize));
-//         sz as u32
-//     }};
-// }
-
 #[cfg(not(target_env = "musl"))]
 fn new_msghdr(iovecs: &mut [libc::iovec]) -> libc::msghdr {
     libc::msghdr {
@@ -91,10 +68,10 @@ fn new_msghdr(iovecs: &mut [libc::iovec]) -> libc::msghdr {
 fn new_msghdr(iovecs: &mut [iovec]) -> msghdr {
     assert!(iovecs.len() <= (std::i32::MAX as usize));
     let mut msg: msghdr = unsafe { std::mem::zeroed() };
-    msg.msg_name = null_mut();
+    msg.msg_name = ptr::null_mut();
     msg.msg_iov = iovecs.as_mut_ptr();
     msg.msg_iovlen = iovecs.len() as i32;
-    msg.msg_control = null_mut();
+    msg.msg_control = ptr::null_mut();
     msg
 }
 
@@ -311,10 +288,10 @@ unsafe fn raw_recvmsg(
         // read.
         let cmsg = (cmsg_ptr as *mut cmsghdr).read_unaligned();
         if cmsg.cmsg_level == SOL_SOCKET && cmsg.cmsg_type == SCM_RIGHTS {
-            #[cfg(target_os = "linux")]
-            let fds_count = (cmsg.cmsg_len - libc::CMSG_LEN(0) as usize) / size_of::<RawFd>();
-            #[cfg(target_os = "macos")]
-            let fds_count = ((cmsg.cmsg_len - libc::CMSG_LEN(0)) as usize) / size_of::<RawFd>();
+            // the type cmsg_len for musl target_env is u32 while usize for gnu taget_env, so to
+            // make it easier to handle the type conversion, we will convert cmsg_len to usize in
+            // all target
+            let fds_count = (cmsg.cmsg_len as usize - libc::CMSG_LEN(0) as usize) / size_of::<RawFd>();
             // The sender can transmit more data than we can buffer. If a message is too long to
             // fit in the supplied buffer, excess bytes may be discarded depending on the type of
             // socket the message is received from.
