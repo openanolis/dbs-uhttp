@@ -291,7 +291,8 @@ unsafe fn raw_recvmsg(
             // the type cmsg_len for musl target_env is u32 while usize for gnu taget_env, so to
             // make it easier to handle the type conversion, we will convert cmsg_len to usize in
             // all target
-            let fds_count = (cmsg.cmsg_len as usize - libc::CMSG_LEN(0) as usize) / size_of::<RawFd>();
+            let fds_count =
+                (cmsg.cmsg_len as usize - libc::CMSG_LEN(0) as usize) / size_of::<RawFd>();
             // The sender can transmit more data than we can buffer. If a message is too long to
             // fit in the supplied buffer, excess bytes may be discarded depending on the type of
             // socket the message is received from.
