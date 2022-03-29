@@ -1,3 +1,6 @@
+# v0.2.0
+- [#11](https://github.com/openanolis/dbs-uhttp/pull/11): fix: compile error in musl target env
+
 # v0.1.0
 
 - dbs-uhttp v0.1.0 first release.
