@@ -552,7 +552,7 @@ impl<T: Read + Write + ScmSocket> HttpConnection<T> {
         self.parsed_requests.pop_front()
     }
 
-    /// Returns if parsed_requests is empty
+    /// Returns if parsed_requests is not empty
     pub fn has_parsed_requests(&self) -> bool {
         !self.parsed_requests.is_empty()
     }
