@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
@@ -28,6 +28,7 @@ pub(crate) const MAX_PAYLOAD_SIZE: usize = 51200;
 type Result<T> = std::result::Result<T, ServerError>;
 
 /// Wrapper over `Request` which adds an identification token.
+#[derive(Debug)]
 pub struct ServerRequest {
     /// Inner request.
     pub request: Request,
@@ -110,44 +111,51 @@ impl<T: Read + Write + ScmSocket> ClientConnection<T> {
     fn read(&mut self) -> Result<Vec<Request>> {
         // Data came into the connection.
         let mut parsed_requests = vec![];
-        match self.connection.try_read() {
-            Err(ConnectionError::ConnectionClosed) => {
-                // Connection timeout.
-                self.state = ClientConnectionState::Closed;
-                // We don't want to propagate this to the server and we will
-                // return no requests and wait for the connection to become
-                // safe to drop.
-                return Ok(vec![]);
-            }
-            Err(ConnectionError::StreamReadError(inner)) => {
-                // Reading from the connection failed.
-                // We should try to write an error message regardless.
-                let mut internal_error_response =
-                    Response::new(Version::Http11, StatusCode::InternalServerError);
-                internal_error_response.set_body(Body::new(inner.to_string()));
-                self.connection.enqueue_response(internal_error_response);
-            }
-            Err(ConnectionError::ParseError(inner)) => {
-                // An error occurred while parsing the read bytes.
-                // Check if there are any valid parsed requests in the queue.
-                while let Some(_discarded_request) = self.connection.pop_parsed_request() {}
+        'out: loop {
+            match self.connection.try_read() {
+                Err(ConnectionError::ConnectionClosed) => {
+                    // Connection timeout.
+                    self.state = ClientConnectionState::Closed;
+                    // We don't want to propagate this to the server and we will
+                    // return no requests and wait for the connection to become
+                    // safe to drop.
+                    return Ok(vec![]);
+                }
+                Err(ConnectionError::StreamReadError(inner)) => {
+                    // Reading from the connection failed.
+                    // We should try to write an error message regardless.
+                    let mut internal_error_response =
+                        Response::new(Version::Http11, StatusCode::InternalServerError);
+                    internal_error_response.set_body(Body::new(inner.to_string()));
+                    self.connection.enqueue_response(internal_error_response);
+                    break;
+                }
+                Err(ConnectionError::ParseError(inner)) => {
+                    // An error occurred while parsing the read bytes.
+                    // Check if there are any valid parsed requests in the queue.
+                    while let Some(_discarded_request) = self.connection.pop_parsed_request() {}
 
-                // Send an error response for the request that gave us the error.
-                let mut error_response = Response::new(Version::Http11, StatusCode::BadRequest);
-                error_response.set_body(Body::new(format!(
+                    // Send an error response for the request that gave us the error.
+                    let mut error_response = Response::new(Version::Http11, StatusCode::BadRequest);
+                    error_response.set_body(Body::new(format!(
                     "{{ \"error\": \"{}\nAll previous unanswered requests will be dropped.\" }}",
                     inner
                 )));
-                self.connection.enqueue_response(error_response);
-            }
-            Err(ConnectionError::InvalidWrite) | Err(ConnectionError::StreamWriteError(_)) => {
-                // This is unreachable because `HttpConnection::try_read()` cannot return this error variant.
-                unreachable!();
-            }
-            Ok(()) => {
-                while let Some(request) = self.connection.pop_parsed_request() {
-                    // Add all valid requests to `parsed_requests`.
-                    parsed_requests.push(request);
+                    self.connection.enqueue_response(error_response);
+                    break;
+                }
+                Err(ConnectionError::InvalidWrite) | Err(ConnectionError::StreamWriteError(_)) => {
+                    // This is unreachable because `HttpConnection::try_read()` cannot return this error variant.
+                    unreachable!();
+                }
+                Ok(()) => {
+                    if self.connection.has_parsed_requests() {
+                        while let Some(request) = self.connection.pop_parsed_request() {
+                            // Add all valid requests to `parsed_requests`.
+                            parsed_requests.push(request);
+                        }
+                        break 'out;
+                    }
                 }
             }
         }
@@ -304,6 +312,9 @@ impl HttpServer {
     }
 
     fn new_from_socket(socket: UnixListener) -> Result<Self> {
+        // as mio use edge trigger epoll under the hook, we should set nonblocking on socket
+        // otherwise we will miss event in some cases
+        socket.set_nonblocking(true).map_err(ServerError::IOError)?;
         let poll = Poll::new().map_err(ServerError::IOError)?;
         Ok(HttpServer {
             socket,
@@ -328,6 +339,19 @@ impl HttpServer {
             Token(self.socket.as_raw_fd() as usize),
             self.socket.as_raw_fd(),
         )
+    }
+
+    /// poll event use mio poll method, and handle Interrupted error explictly
+    fn poll_events(&mut self, events: &mut mio::Events) -> Result<()> {
+        loop {
+            if let Err(e) = self.poll.poll(events, None) {
+                if e.kind() == ErrorKind::Interrupted {
+                    continue;
+                }
+                return Err(ServerError::IOError(e));
+            }
+            return Ok(());
+        }
     }
 
     /// This function is responsible for the data exchange with the clients and should
@@ -355,15 +379,12 @@ impl HttpServer {
         // current thread until at least one event is received.
         // The received notifications will then populate the `events` array with
         // `event_count` elements, where 1 <= event_count <= MAX_CONNECTIONS.
-        self.poll
-            .poll(&mut events, None)
-            .map_err(ServerError::IOError)?;
+        self.poll_events(&mut events)?;
 
         // We use `take()` on the iterator over `events` as, even though only
         // `events_count` events have been inserted into `events`, the size of
         // the array is still `MAX_CONNECTIONS`, so we discard empty elements
         // at the end of the array.
-
         for e in events.iter() {
             // Check the file descriptor which produced the notification `e`.
             // It could be that we have a new connection, or one of our open
@@ -561,7 +582,7 @@ impl HttpServer {
                     &self.poll,
                     client_connection.connection.as_raw_fd(),
                     response.id,
-                    Interest::WRITABLE.add(Interest::READABLE),
+                    Interest::WRITABLE,
                     // epoll::EventSet::OUT | epoll::EventSet::READ_HANG_UP,
                 )?;
             }
@@ -581,33 +602,32 @@ impl HttpServer {
             // this is where we will have it.
             return Err(ServerError::ServerFull);
         }
-
-        self.socket
-            .accept()
-            .map_err(ServerError::IOError)
-            .and_then(|(stream, _)| {
-                // `HttpConnection` is supposed to work with non-blocking streams.
-                stream
-                    .set_nonblocking(true)
-                    .map(|_| stream)
-                    .map_err(ServerError::IOError)
-            })
-            .and_then(|stream| {
-                // Add the stream to the `epoll` structure and listen for bytes to be read.
-                let raw_fd = stream.as_raw_fd();
-                let token = mio::Token(raw_fd as usize);
-                // Self::epoll_add(&self.poll, token, raw_fd)?;
-
-                self.poll
-                    .registry()
-                    .register(&mut SourceFd(&raw_fd), token, Interest::READABLE)
-                    .map_err(ServerError::IOError)?;
-                let mut conn = HttpConnection::new(stream);
-                conn.set_payload_max_size(self.payload_max_size);
-                // Then add it to our open connections.
-                self.connections.insert(token, ClientConnection::new(conn));
-                Ok(())
-            })
+        loop {
+            if let Err(e) = self
+                .socket
+                .accept()
+                .and_then(|(stream, _)| stream.set_nonblocking(true).map(|_| stream))
+                .and_then(|stream| {
+                    let raw_fd = stream.as_raw_fd();
+                    let token = mio::Token(raw_fd as usize);
+                    self.poll.registry().register(
+                        &mut SourceFd(&raw_fd),
+                        token,
+                        Interest::READABLE,
+                    )?;
+                    let mut conn = HttpConnection::new(stream);
+                    conn.set_payload_max_size(self.payload_max_size);
+                    self.connections.insert(token, ClientConnection::new(conn));
+                    Ok(())
+                })
+            {
+                if e.kind() == ErrorKind::WouldBlock {
+                    break;
+                }
+                return Err(ServerError::IOError(e));
+            }
+        }
+        Ok(())
     }
 
     /// Changes the event type for a connection to either listen for incoming bytes
@@ -679,6 +699,45 @@ mod tests {
                          Content-Type: application/json\r\n\r\nwhatever body",
             )
             .unwrap();
+
+        let mut req_vec = server.requests().unwrap();
+        let server_request = req_vec.remove(0);
+
+        server
+            .respond(server_request.process(|_request| {
+                let mut response = Response::new(Version::Http11, StatusCode::OK);
+                let response_body = b"response body";
+                response.set_body(Body::new(response_body.to_vec()));
+                response
+            }))
+            .unwrap();
+        assert!(server.requests().unwrap().is_empty());
+
+        let mut buf: [u8; 1024] = [0; 1024];
+        assert!(socket.read(&mut buf[..]).unwrap() > 0);
+    }
+
+    #[test]
+    fn test_large_payload() {
+        let path_to_socket = get_temp_socket_file();
+
+        let mut server = HttpServer::new(path_to_socket.as_path()).unwrap();
+        server.start_server().unwrap();
+
+        // Test one incoming connection.
+        let mut socket = UnixStream::connect(path_to_socket.as_path()).unwrap();
+        assert!(server.requests().unwrap().is_empty());
+
+        let mut packets = String::from(
+            "PATCH /machine-config HTTP/1.1\r\n\
+                         Content-Length: 1028\r\n\
+                         Content-Type: application/json\r\n\r\n",
+        );
+        for i in 0..1028 {
+            packets.push_str(&i.to_string());
+        }
+
+        socket.write_all(packets.as_bytes()).unwrap();
 
         let mut req_vec = server.requests().unwrap();
         let server_request = req_vec.remove(0);
