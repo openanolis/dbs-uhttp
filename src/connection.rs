@@ -552,6 +552,11 @@ impl<T: Read + Write + ScmSocket> HttpConnection<T> {
         self.parsed_requests.pop_front()
     }
 
+    /// Returns if parsed_requests is not empty
+    pub fn has_parsed_requests(&self) -> bool {
+        !self.parsed_requests.is_empty()
+    }
+
     /// Returns `true` if there are bytes waiting to be written into the stream.
     pub fn pending_write(&self) -> bool {
         self.response_buffer.is_some() || !self.response_queue.is_empty()
