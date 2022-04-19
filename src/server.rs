@@ -621,6 +621,9 @@ impl HttpServer {
                     Ok(())
                 })
             {
+                if e.kind() == ErrorKind::Interrupted {
+                    continue;
+                }
                 if e.kind() == ErrorKind::WouldBlock {
                     break;
                 }
