@@ -345,7 +345,7 @@ impl HttpServer {
     fn poll_events(&mut self, events: &mut mio::Events) -> Result<()> {
         loop {
             if let Err(e) = self.poll.poll(events, None) {
-                if e.kind() == ErrorKind::Interrupted {
+                if e.kind() == ErrorKind::Interrupted || e.kind() == ErrorKind::WouldBlock {
                     continue;
                 }
                 return Err(ServerError::IOError(e));
