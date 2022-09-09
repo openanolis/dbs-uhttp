@@ -172,21 +172,24 @@ impl<T: Read + Write + ScmSocket> ClientConnection<T> {
     }
 
     fn write(&mut self) -> Result<()> {
-        // The stream is available for writing.
-        match self.connection.try_write() {
-            Err(ConnectionError::ConnectionClosed) | Err(ConnectionError::StreamWriteError(_)) => {
-                // Writing to the stream failed so it will be removed.
-                self.state = ClientConnectionState::Closed;
-            }
-            Err(ConnectionError::InvalidWrite) => {
-                // A `try_write` call was performed on a connection that has nothing
-                // to write.
-                return Err(ServerError::ConnectionError(ConnectionError::InvalidWrite));
-            }
-            _ => {
-                // Check if we still have bytes to write for this connection.
-                if !self.connection.pending_write() {
-                    self.state = ClientConnectionState::AwaitingIncoming;
+        while self.state != ClientConnectionState::Closed {
+            match self.connection.try_write() {
+                Err(ConnectionError::ConnectionClosed)
+                | Err(ConnectionError::StreamWriteError(_)) => {
+                    // Writing to the stream failed so it will be removed.
+                    self.state = ClientConnectionState::Closed;
+                }
+                Err(ConnectionError::InvalidWrite) => {
+                    // A `try_write` call was performed on a connection that has nothing
+                    // to write.
+                    return Err(ServerError::ConnectionError(ConnectionError::InvalidWrite));
+                }
+                _ => {
+                    // Check if we still have bytes to write for this connection.
+                    if !self.connection.pending_write() {
+                        self.state = ClientConnectionState::AwaitingIncoming;
+                        break;
+                    }
                 }
             }
         }
@@ -429,6 +432,7 @@ impl HttpServer {
                                 .map(|request| ServerRequest::new(request, e.token()))
                                 .collect(),
                         );
+
                         // If the connection was incoming before we read and we now have to write
                         // either an error message or an `expect` response, we change its `epoll`
                         // event set to notify us when the stream is ready for writing.
@@ -437,7 +441,7 @@ impl HttpServer {
                                 &self.poll,
                                 client_connection.connection.as_raw_fd(),
                                 t,
-                                Interest::WRITABLE.add(Interest::READABLE),
+                                Interest::WRITABLE,
                                 // epoll::EventSet::OUT | epoll::EventSet::READ_HANG_UP,
                             )?;
                         }
@@ -1161,5 +1165,64 @@ mod tests {
         assert!(second_socket.read(&mut buf[..]).unwrap() > 0);
         second_socket.shutdown(std::net::Shutdown::Both).unwrap();
         assert!(server.requests().is_ok());
+    }
+
+    #[test]
+    fn test_wait_two_messages() {
+        let path_to_socket = get_temp_socket_file();
+
+        let mut server = HttpServer::new(path_to_socket.as_path()).unwrap();
+        server.start_server().unwrap();
+
+        // Test one incoming connection.
+        let mut socket = UnixStream::connect(path_to_socket.as_path()).unwrap();
+        assert!(server.requests().unwrap().is_empty());
+
+        socket
+            .write_all(
+                b"PATCH /machine-config HTTP/1.1\r\n\
+                         Content-Length: 13\r\n\
+                         Content-Type: application/json\r\n\r\nwhatever body",
+            )
+            .unwrap();
+
+        let mut req_vec = server.requests().unwrap();
+        let server_request = req_vec.remove(0);
+
+        socket
+            .write_all(
+                b"PATCH /machine-config HTTP/1.1\r\n\
+                         Content-Length: 13\r\n\
+                         Content-Type: application/json\r\n\r\nwhatever body",
+            )
+            .unwrap();
+
+        server
+            .respond(server_request.process(|_request| {
+                let mut response = Response::new(Version::Http11, StatusCode::OK);
+                let response_body = b"response body";
+                response.set_body(Body::new(response_body.to_vec()));
+                response
+            }))
+            .unwrap();
+        assert!(server.requests().unwrap().is_empty());
+
+        let mut buf: [u8; 1024] = [0; 1024];
+        assert!(socket.read(&mut buf[..]).unwrap() > 0);
+
+        let mut req_vec = server.requests().unwrap();
+        let server_request = req_vec.remove(0);
+        server
+            .respond(server_request.process(|_request| {
+                let mut response = Response::new(Version::Http11, StatusCode::OK);
+                let response_body = b"response body";
+                response.set_body(Body::new(response_body.to_vec()));
+                response
+            }))
+            .unwrap();
+        assert!(server.requests().unwrap().is_empty());
+
+        let mut buf: [u8; 1024] = [0; 1024];
+        assert!(socket.read(&mut buf[..]).unwrap() > 0);
     }
 }
