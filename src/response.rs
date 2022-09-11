@@ -12,7 +12,7 @@ use crate::Method;
 ///
 /// The status code is defined as specified in the
 /// [RFC](https://tools.ietf.org/html/rfc7231#section-6).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StatusCode {
     /// 100, Continue
     Continue,
@@ -57,7 +57,7 @@ impl StatusCode {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 struct StatusLine {
     http_version: Version,
     status_code: StatusCode,
@@ -84,7 +84,7 @@ impl StatusLine {
 /// Wrapper over the list of headers associated with a HTTP Response.
 /// When creating a ResponseHeaders object, the content type is initialized to `text/plain`.
 /// The content type can be updated with a call to `set_content_type`.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ResponseHeaders {
     content_length: i32,
     content_type: MediaType,
@@ -208,7 +208,7 @@ impl ResponseHeaders {
 /// the body is initialized to `None` and the header is initialized with the `default` value. The body
 /// can be updated with a call to `set_body`. The header can be updated with `set_content_type` and
 /// `set_server`.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Response {
     status_line: StatusLine,
     headers: ResponseHeaders,
