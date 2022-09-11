@@ -384,45 +384,6 @@ unsafe impl<'a> IntoIovec for &'a [u8] {
 
 /// Trait for file descriptors can send and receive socket control messages via `sendmsg` and
 /// `recvmsg`.
-///
-/// # Examples
-///
-/// ```
-/// # extern crate libc;
-/// extern crate vmm_sys_util;
-/// use vmm_sys_util::sock_ctrl_msg::ScmSocket;
-/// # use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
-/// # use std::fs::File;
-/// # use std::io::Write;
-/// # use std::os::unix::io::{AsRawFd, FromRawFd};
-/// # use std::os::unix::net::UnixDatagram;
-/// # use std::slice::from_raw_parts;
-///
-/// # use libc::{c_void, iovec};
-///
-/// let (s1, s2) = UnixDatagram::pair().expect("failed to create socket pair");
-/// let evt = EventFd::new(0).expect("failed to create eventfd");
-///
-/// let write_count = s1
-///     .send_with_fds(&[[237].as_ref()], &[evt.as_raw_fd()])
-///     .expect("failed to send fd");
-///
-/// let mut files = [0; 2];
-/// let mut buf = [0u8];
-/// let mut iovecs = [iovec {
-///     iov_base: buf.as_mut_ptr() as *mut c_void,
-///     iov_len: buf.len(),
-/// }];
-/// let (read_count, file_count) = unsafe {
-///     s2.recv_with_fds(&mut iovecs[..], &mut files)
-///         .expect("failed to recv fd")
-/// };
-///
-/// let mut file = unsafe { File::from_raw_fd(files[0]) };
-/// file.write(unsafe { from_raw_parts(&1203u64 as *const u64 as *const u8, 8) })
-///     .expect("failed to write to sent fd");
-/// assert_eq!(evt.read().expect("failed to read from eventfd"), 1203);
-/// ```
 pub trait ScmSocket {
     /// Gets the file descriptor of this socket.
     fn socket_fd(&self) -> RawFd;

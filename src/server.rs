@@ -504,59 +504,7 @@ impl HttpServer {
     /// The file descriptor of the `epoll` structure can enable the server to become
     /// a non-blocking structure in an application.
     ///
-    /// Returns a reference to the instance of the server's internal `epoll` structure.
-    ///
-    /// # Example
-    ///
-    /// ## Non-blocking server
-    /// ```
-    /// use std::os::unix::io::AsRawFd;
-    ///
-    /// use dbs_uhttp::{HttpServer, Response, StatusCode};
-    /// use vmm_sys_util::epoll;
-    ///
-    /// // Create our epoll manager.
-    /// let epoll = epoll::Epoll::new().unwrap();
-    ///
-    /// let path_to_socket = "/tmp/epoll_example.sock";
-    /// std::fs::remove_file(path_to_socket).unwrap_or_default();
-    ///
-    /// // Start the server.
-    /// let mut server = HttpServer::new(path_to_socket).unwrap();
-    /// server.start_server().unwrap();
-    ///
-    /// // Add our server to the `epoll` manager.
-    /// epoll.ctl(
-    ///     epoll::ControlOperation::Add,
-    ///     server.epoll().as_raw_fd(),
-    ///     epoll::EpollEvent::new(epoll::EventSet::IN, 1234u64),
-    /// )
-    /// .unwrap();
-    ///
-    /// // Connect a client to the server so it doesn't block in our example.
-    /// let mut socket = std::os::unix::net::UnixStream::connect(path_to_socket).unwrap();
-    ///
-    /// // Control loop of the application.
-    /// let mut events = Vec::with_capacity(10);
-    /// loop {
-    ///     let num_ev = epoll.wait(-1, events.as_mut_slice());
-    ///     for event in events {
-    ///         match event.data() {
-    ///             // The server notification.
-    ///             1234 => {
-    ///                 let request = server.requests();
-    ///                 // Process...
-    ///             }
-    ///             // Other `epoll` notifications.
-    ///             _ => {
-    ///                 // Do other computation.
-    ///             }
-    ///         }
-    ///     }
-    ///     // Break this example loop.
-    ///     break;
-    /// }
-    /// ```
+    /// Returns a reference to the instance of the server's internal `Poll` structure.
     pub fn epoll(&self) -> &Poll {
         &self.poll
     }
