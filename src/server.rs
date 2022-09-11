@@ -216,11 +216,11 @@ impl<T: Read + Write + ScmSocket> ClientConnection<T> {
             && self.in_flight_response_count == 0
     }
 
-    // close the connection and clear the inflight response, so that the client can be deleted
+    // Make the connection as closed.
     fn close(&mut self) {
         self.clear_write_buffer();
         self.state = ClientConnectionState::Closed;
-        self.in_flight_response_count = 0;
+        //self.in_flight_response_count = 0;
     }
 }
 
@@ -1106,11 +1106,11 @@ mod tests {
 
         first_socket.shutdown(std::net::Shutdown::Both).unwrap();
         assert!(server.requests().unwrap().is_empty());
-        assert_eq!(server.connections.len(), 0);
+        assert_eq!(server.connections.len(), 1);
         let mut second_socket = UnixStream::connect(path_to_socket.as_path()).unwrap();
         second_socket.set_nonblocking(true).unwrap();
         assert!(server.requests().unwrap().is_empty());
-        assert_eq!(server.connections.len(), 1);
+        assert_eq!(server.connections.len(), 2);
 
         server
             .enqueue_responses(vec![server_request.process(|_request| {
@@ -1122,7 +1122,7 @@ mod tests {
             .unwrap();
 
         // assert!(server.requests().unwrap().is_empty());
-        assert_eq!(server.connections.len(), 1);
+        assert_eq!(server.connections.len(), 2);
         let mut buf: [u8; 1024] = [0; 1024];
         assert!(second_socket.read(&mut buf[..]).is_err());
 
@@ -1136,6 +1136,7 @@ mod tests {
         let mut req_vec = server.requests().unwrap();
         let second_server_request = req_vec.remove(0);
 
+        assert_eq!(server.connections.len(), 1);
         assert_eq!(
             second_server_request.request,
             Request::try_from(
