@@ -8,11 +8,10 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 
 use mio::unix::SourceFd;
-use mio::{Interest, Poll, Token};
+use mio::{Events, Interest, Poll, Token};
 
 use crate::common::sock_ctrl_msg::ScmSocket;
-use crate::common::{Body, Version};
-pub use crate::common::{ConnectionError, RequestError, ServerError};
+use crate::common::{Body, ConnectionError, ServerError, Version};
 use crate::connection::HttpConnection;
 use crate::request::Request;
 use crate::response::{Response, StatusCode};
@@ -33,13 +32,13 @@ pub struct ServerRequest {
     /// Inner request.
     pub request: Request,
     /// Identification token.
-    id: mio::Token,
+    id: Token,
 }
 
 impl ServerRequest {
     /// Creates a new `ServerRequest` object from an existing `Request`,
     /// adding an identification token.
-    pub fn new(request: Request, id: mio::Token) -> Self {
+    pub fn new(request: Request, id: Token) -> Self {
         Self { request, id }
     }
 
@@ -67,11 +66,11 @@ pub struct ServerResponse {
     /// Inner response.
     response: Response,
     /// Identification token.
-    id: mio::Token,
+    id: Token,
 }
 
 impl ServerResponse {
-    fn new(response: Response, id: mio::Token) -> Self {
+    fn new(response: Response, id: Token) -> Self {
         Self { response, id }
     }
 }
@@ -272,14 +271,13 @@ pub struct HttpServer {
     /// Socket on which we listen for new connections.
     socket: UnixListener,
     /// Server's epoll instance.
-    // epoll: epoll::Epoll,
     poll: Poll,
     /// Holds the token-connection pairs of the server.
     /// Each connection has an associated identification token, which is
     /// the file descriptor of the underlying stream.
     /// We use the file descriptor of the stream as the key for mapping
     /// connections because the 1-to-1 relation is guaranteed by the OS.
-    connections: HashMap<mio::Token, ClientConnection<UnixStream>>,
+    connections: HashMap<Token, ClientConnection<UnixStream>>,
     /// Payload max size
     payload_max_size: usize,
 }
@@ -341,8 +339,8 @@ impl HttpServer {
         )
     }
 
-    /// poll event use mio poll method, and handle Interrupted error explictly
-    fn poll_events(&mut self, events: &mut mio::Events) -> Result<()> {
+    /// poll event use mio poll method, and handle Interrupted error explicitly
+    fn poll_events(&mut self, events: &mut Events) -> Result<()> {
         loop {
             if let Err(e) = self.poll.poll(events, None) {
                 if e.kind() == ErrorKind::Interrupted || e.kind() == ErrorKind::WouldBlock {
@@ -419,6 +417,7 @@ impl HttpServer {
                         client_connection.close();
                         continue;
                     }
+
                     if e.is_readable() {
                         // We have bytes to read from this connection.
                         // If our `read` yields `Request` objects, we wrap them with an ID before
@@ -576,7 +575,7 @@ impl HttpServer {
         if let Some(client_connection) = self.connections.get_mut(&response.id) {
             // If the connection was incoming before we enqueue the response, we change its
             // `epoll` event set to notify us when the stream is ready for writing.
-            if let ClientConnectionState::AwaitingIncoming = client_connection.state {
+            if ClientConnectionState::AwaitingIncoming == client_connection.state {
                 client_connection.state = ClientConnectionState::AwaitingOutgoing;
                 Self::epoll_mod(
                     &self.poll,
@@ -609,7 +608,7 @@ impl HttpServer {
                 .and_then(|(stream, _)| stream.set_nonblocking(true).map(|_| stream))
                 .and_then(|stream| {
                     let raw_fd = stream.as_raw_fd();
-                    let token = mio::Token(raw_fd as usize);
+                    let token = Token(raw_fd as usize);
                     self.poll.registry().register(
                         &mut SourceFd(&raw_fd),
                         token,
@@ -638,12 +637,7 @@ impl HttpServer {
     ///
     /// # Errors
     /// `IOError` is returned when an `EPOLL_CTL_MOD` control operation fails.
-    fn epoll_mod(
-        epoll: &Poll,
-        stream_fd: RawFd,
-        token: mio::Token,
-        evset: mio::Interest,
-    ) -> Result<()> {
+    fn epoll_mod(epoll: &Poll, stream_fd: RawFd, token: Token, evset: Interest) -> Result<()> {
         epoll
             .registry()
             .reregister(&mut SourceFd(&stream_fd), token, evset)
@@ -654,7 +648,7 @@ impl HttpServer {
     ///
     /// # Errors
     /// `IOError` is returned when an `EPOLL_CTL_ADD` control operation fails.
-    fn epoll_add(poll: &Poll, token: mio::Token, stream_fd: RawFd) -> Result<()> {
+    fn epoll_add(poll: &Poll, token: Token, stream_fd: RawFd) -> Result<()> {
         poll.registry()
             .register(&mut SourceFd(&stream_fd), token, Interest::READABLE)
             .map_err(ServerError::IOError)
@@ -1009,19 +1003,19 @@ mod tests {
         let mut buf: [u8; 120] = [0; 120];
         sockets[MAX_CONNECTIONS].read_exact(&mut buf).unwrap();
         assert_eq!(&buf[..], SERVER_FULL_ERROR_MESSAGE);
-        assert_eq!(server.connections.len(), 10);
+        assert_eq!(server.connections.len(), MAX_CONNECTIONS);
         {
             // Drop this stream.
             let _refused_stream = sockets.pop().unwrap();
         }
-        assert_eq!(server.connections.len(), 10);
+        assert_eq!(server.connections.len(), MAX_CONNECTIONS);
 
         // Check that the server detects a connection shutdown.
         let sock: &UnixStream = sockets.get(0).unwrap();
         sock.shutdown(Shutdown::Both).unwrap();
         assert!(server.requests().unwrap().is_empty());
         // Server should drop a closed connection.
-        assert_eq!(server.connections.len(), 9);
+        assert_eq!(server.connections.len(), MAX_CONNECTIONS - 1);
 
         // Close the backing FD of this connection by dropping
         // it out of scope.
@@ -1031,7 +1025,7 @@ mod tests {
         }
         assert!(server.requests().unwrap().is_empty());
         // Server should drop a closed connection.
-        assert_eq!(server.connections.len(), 8);
+        assert_eq!(server.connections.len(), MAX_CONNECTIONS - 2);
 
         let sock: &UnixStream = sockets.get(1).unwrap();
         // Close both the read and write sides of the socket
@@ -1040,7 +1034,7 @@ mod tests {
         sock.shutdown(Shutdown::Write).unwrap();
         assert!(server.requests().unwrap().is_empty());
         // Server should drop a closed connection.
-        assert_eq!(server.connections.len(), 7);
+        assert_eq!(server.connections.len(), MAX_CONNECTIONS - 3);
     }
 
     #[test]
@@ -1082,6 +1076,8 @@ mod tests {
                          Content-Type: application/json\r\n\r\nwhatever body",
             )
             .unwrap();
+        assert!(server.requests().unwrap().is_empty());
+        assert!(server.requests().unwrap().is_empty());
     }
 
     #[test]
@@ -1110,9 +1106,11 @@ mod tests {
 
         first_socket.shutdown(std::net::Shutdown::Both).unwrap();
         assert!(server.requests().unwrap().is_empty());
+        assert_eq!(server.connections.len(), 0);
         let mut second_socket = UnixStream::connect(path_to_socket.as_path()).unwrap();
         second_socket.set_nonblocking(true).unwrap();
         assert!(server.requests().unwrap().is_empty());
+        assert_eq!(server.connections.len(), 1);
 
         server
             .enqueue_responses(vec![server_request.process(|_request| {

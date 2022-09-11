@@ -113,14 +113,15 @@ mod request;
 mod response;
 mod router;
 mod server;
+
 use crate::common::ascii;
 use crate::common::headers;
 
 pub use self::router::{EndpointHandler, HttpRoutes, RouteError};
 pub use crate::common::headers::{Encoding, Headers, MediaType};
 pub use crate::common::sock_ctrl_msg::ScmSocket;
-pub use crate::common::{Body, HttpHeaderError, Method, SysError, Version};
+pub use crate::common::{Body, HttpHeaderError, Method, ServerError, SysError, Version};
 pub use crate::connection::{ConnectionError, HttpConnection};
 pub use crate::request::{Request, RequestError};
 pub use crate::response::{Response, ResponseHeaders, StatusCode};
-pub use crate::server::{HttpServer, ServerError, ServerRequest, ServerResponse};
+pub use crate::server::{HttpServer, ServerRequest, ServerResponse};
