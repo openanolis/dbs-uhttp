@@ -8,11 +8,10 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 
 use mio::unix::SourceFd;
-use mio::{Interest, Poll, Token};
+use mio::{Events, Interest, Poll, Token};
 
 use crate::common::sock_ctrl_msg::ScmSocket;
-use crate::common::{Body, Version};
-pub use crate::common::{ConnectionError, RequestError, ServerError};
+use crate::common::{Body, ConnectionError, ServerError, Version};
 use crate::connection::HttpConnection;
 use crate::request::Request;
 use crate::response::{Response, StatusCode};
@@ -21,7 +20,11 @@ static SERVER_FULL_ERROR_MESSAGE: &[u8] = b"HTTP/1.1 503\r\n\
                                             Server: Firecracker API\r\n\
                                             Connection: close\r\n\
                                             Content-Length: 40\r\n\r\n{ \"error\": \"Too many open connections\" }";
+#[cfg(target_os = "linux")]
+const MAX_CONNECTIONS: usize = 256;
+#[cfg(not(target_os = "linux"))]
 const MAX_CONNECTIONS: usize = 10;
+const MAX_EVENTS: usize = 64;
 /// Payload max size
 pub(crate) const MAX_PAYLOAD_SIZE: usize = 51200;
 
@@ -33,13 +36,13 @@ pub struct ServerRequest {
     /// Inner request.
     pub request: Request,
     /// Identification token.
-    id: mio::Token,
+    id: Token,
 }
 
 impl ServerRequest {
     /// Creates a new `ServerRequest` object from an existing `Request`,
     /// adding an identification token.
-    pub fn new(request: Request, id: mio::Token) -> Self {
+    pub fn new(request: Request, id: Token) -> Self {
         Self { request, id }
     }
 
@@ -67,11 +70,11 @@ pub struct ServerResponse {
     /// Inner response.
     response: Response,
     /// Identification token.
-    id: mio::Token,
+    id: Token,
 }
 
 impl ServerResponse {
-    fn new(response: Response, id: mio::Token) -> Self {
+    fn new(response: Response, id: Token) -> Self {
         Self { response, id }
     }
 }
@@ -173,21 +176,24 @@ impl<T: Read + Write + ScmSocket> ClientConnection<T> {
     }
 
     fn write(&mut self) -> Result<()> {
-        // The stream is available for writing.
-        match self.connection.try_write() {
-            Err(ConnectionError::ConnectionClosed) | Err(ConnectionError::StreamWriteError(_)) => {
-                // Writing to the stream failed so it will be removed.
-                self.state = ClientConnectionState::Closed;
-            }
-            Err(ConnectionError::InvalidWrite) => {
-                // A `try_write` call was performed on a connection that has nothing
-                // to write.
-                return Err(ServerError::ConnectionError(ConnectionError::InvalidWrite));
-            }
-            _ => {
-                // Check if we still have bytes to write for this connection.
-                if !self.connection.pending_write() {
-                    self.state = ClientConnectionState::AwaitingIncoming;
+        while self.state != ClientConnectionState::Closed {
+            match self.connection.try_write() {
+                Err(ConnectionError::ConnectionClosed)
+                | Err(ConnectionError::StreamWriteError(_)) => {
+                    // Writing to the stream failed so it will be removed.
+                    self.state = ClientConnectionState::Closed;
+                }
+                Err(ConnectionError::InvalidWrite) => {
+                    // A `try_write` call was performed on a connection that has nothing
+                    // to write.
+                    return Err(ServerError::ConnectionError(ConnectionError::InvalidWrite));
+                }
+                _ => {
+                    // Check if we still have bytes to write for this connection.
+                    if !self.connection.pending_write() {
+                        self.state = ClientConnectionState::AwaitingIncoming;
+                        break;
+                    }
                 }
             }
         }
@@ -217,11 +223,11 @@ impl<T: Read + Write + ScmSocket> ClientConnection<T> {
             && self.in_flight_response_count == 0
     }
 
-    // close the connection and clear the inflight response, so that the client can be deleted
+    // Make the connection as closed.
     fn close(&mut self) {
         self.clear_write_buffer();
         self.state = ClientConnectionState::Closed;
-        self.in_flight_response_count = 0;
+        //self.in_flight_response_count = 0;
     }
 }
 
@@ -272,14 +278,13 @@ pub struct HttpServer {
     /// Socket on which we listen for new connections.
     socket: UnixListener,
     /// Server's epoll instance.
-    // epoll: epoll::Epoll,
     poll: Poll,
     /// Holds the token-connection pairs of the server.
     /// Each connection has an associated identification token, which is
     /// the file descriptor of the underlying stream.
     /// We use the file descriptor of the stream as the key for mapping
     /// connections because the 1-to-1 relation is guaranteed by the OS.
-    connections: HashMap<mio::Token, ClientConnection<UnixStream>>,
+    connections: HashMap<Token, ClientConnection<UnixStream>>,
     /// Payload max size
     payload_max_size: usize,
 }
@@ -341,8 +346,8 @@ impl HttpServer {
         )
     }
 
-    /// poll event use mio poll method, and handle Interrupted error explictly
-    fn poll_events(&mut self, events: &mut mio::Events) -> Result<()> {
+    /// poll event use mio poll method, and handle Interrupted error explicitly
+    fn poll_events(&mut self, events: &mut Events) -> Result<()> {
         loop {
             if let Err(e) = self.poll.poll(events, None) {
                 if e.kind() == ErrorKind::Interrupted || e.kind() == ErrorKind::WouldBlock {
@@ -373,17 +378,16 @@ impl HttpServer {
     /// on a connection on which it is not possible.
     pub fn requests(&mut self) -> Result<Vec<ServerRequest>> {
         let mut parsed_requests: Vec<ServerRequest> = vec![];
-        let mut events = mio::Events::with_capacity(MAX_CONNECTIONS);
-        // let mut events = vec![epoll::EpollEvent::default(); MAX_CONNECTIONS];
+        let mut events = mio::Events::with_capacity(MAX_EVENTS);
         // This is a wrapper over the syscall `epoll_wait` and it will block the
         // current thread until at least one event is received.
         // The received notifications will then populate the `events` array with
-        // `event_count` elements, where 1 <= event_count <= MAX_CONNECTIONS.
+        // `event_count` elements, where 1 <= event_count <= MAX_EVENTS.
         self.poll_events(&mut events)?;
 
         // We use `take()` on the iterator over `events` as, even though only
         // `events_count` events have been inserted into `events`, the size of
-        // the array is still `MAX_CONNECTIONS`, so we discard empty elements
+        // the array is still `MAX_EVENTS`, so we discard empty elements
         // at the end of the array.
         for e in events.iter() {
             // Check the file descriptor which produced the notification `e`.
@@ -419,6 +423,7 @@ impl HttpServer {
                         client_connection.close();
                         continue;
                     }
+
                     if e.is_readable() {
                         // We have bytes to read from this connection.
                         // If our `read` yields `Request` objects, we wrap them with an ID before
@@ -430,6 +435,7 @@ impl HttpServer {
                                 .map(|request| ServerRequest::new(request, e.token()))
                                 .collect(),
                         );
+
                         // If the connection was incoming before we read and we now have to write
                         // either an error message or an `expect` response, we change its `epoll`
                         // event set to notify us when the stream is ready for writing.
@@ -438,7 +444,7 @@ impl HttpServer {
                                 &self.poll,
                                 client_connection.connection.as_raw_fd(),
                                 t,
-                                Interest::WRITABLE.add(Interest::READABLE),
+                                Interest::WRITABLE,
                                 // epoll::EventSet::OUT | epoll::EventSet::READ_HANG_UP,
                             )?;
                         }
@@ -498,59 +504,7 @@ impl HttpServer {
     /// The file descriptor of the `epoll` structure can enable the server to become
     /// a non-blocking structure in an application.
     ///
-    /// Returns a reference to the instance of the server's internal `epoll` structure.
-    ///
-    /// # Example
-    ///
-    /// ## Non-blocking server
-    /// ```
-    /// use std::os::unix::io::AsRawFd;
-    ///
-    /// use dbs_uhttp::{HttpServer, Response, StatusCode};
-    /// use vmm_sys_util::epoll;
-    ///
-    /// // Create our epoll manager.
-    /// let epoll = epoll::Epoll::new().unwrap();
-    ///
-    /// let path_to_socket = "/tmp/epoll_example.sock";
-    /// std::fs::remove_file(path_to_socket).unwrap_or_default();
-    ///
-    /// // Start the server.
-    /// let mut server = HttpServer::new(path_to_socket).unwrap();
-    /// server.start_server().unwrap();
-    ///
-    /// // Add our server to the `epoll` manager.
-    /// epoll.ctl(
-    ///     epoll::ControlOperation::Add,
-    ///     server.epoll().as_raw_fd(),
-    ///     epoll::EpollEvent::new(epoll::EventSet::IN, 1234u64),
-    /// )
-    /// .unwrap();
-    ///
-    /// // Connect a client to the server so it doesn't block in our example.
-    /// let mut socket = std::os::unix::net::UnixStream::connect(path_to_socket).unwrap();
-    ///
-    /// // Control loop of the application.
-    /// let mut events = Vec::with_capacity(10);
-    /// loop {
-    ///     let num_ev = epoll.wait(-1, events.as_mut_slice());
-    ///     for event in events {
-    ///         match event.data() {
-    ///             // The server notification.
-    ///             1234 => {
-    ///                 let request = server.requests();
-    ///                 // Process...
-    ///             }
-    ///             // Other `epoll` notifications.
-    ///             _ => {
-    ///                 // Do other computation.
-    ///             }
-    ///         }
-    ///     }
-    ///     // Break this example loop.
-    ///     break;
-    /// }
-    /// ```
+    /// Returns a reference to the instance of the server's internal `Poll` structure.
     pub fn epoll(&self) -> &Poll {
         &self.poll
     }
@@ -576,7 +530,7 @@ impl HttpServer {
         if let Some(client_connection) = self.connections.get_mut(&response.id) {
             // If the connection was incoming before we enqueue the response, we change its
             // `epoll` event set to notify us when the stream is ready for writing.
-            if let ClientConnectionState::AwaitingIncoming = client_connection.state {
+            if ClientConnectionState::AwaitingIncoming == client_connection.state {
                 client_connection.state = ClientConnectionState::AwaitingOutgoing;
                 Self::epoll_mod(
                     &self.poll,
@@ -609,7 +563,7 @@ impl HttpServer {
                 .and_then(|(stream, _)| stream.set_nonblocking(true).map(|_| stream))
                 .and_then(|stream| {
                     let raw_fd = stream.as_raw_fd();
-                    let token = mio::Token(raw_fd as usize);
+                    let token = Token(raw_fd as usize);
                     self.poll.registry().register(
                         &mut SourceFd(&raw_fd),
                         token,
@@ -638,12 +592,7 @@ impl HttpServer {
     ///
     /// # Errors
     /// `IOError` is returned when an `EPOLL_CTL_MOD` control operation fails.
-    fn epoll_mod(
-        epoll: &Poll,
-        stream_fd: RawFd,
-        token: mio::Token,
-        evset: mio::Interest,
-    ) -> Result<()> {
+    fn epoll_mod(epoll: &Poll, stream_fd: RawFd, token: Token, evset: Interest) -> Result<()> {
         epoll
             .registry()
             .reregister(&mut SourceFd(&stream_fd), token, evset)
@@ -654,7 +603,7 @@ impl HttpServer {
     ///
     /// # Errors
     /// `IOError` is returned when an `EPOLL_CTL_ADD` control operation fails.
-    fn epoll_add(poll: &Poll, token: mio::Token, stream_fd: RawFd) -> Result<()> {
+    fn epoll_add(poll: &Poll, token: Token, stream_fd: RawFd) -> Result<()> {
         poll.registry()
             .register(&mut SourceFd(&stream_fd), token, Interest::READABLE)
             .map_err(ServerError::IOError)
@@ -1009,19 +958,19 @@ mod tests {
         let mut buf: [u8; 120] = [0; 120];
         sockets[MAX_CONNECTIONS].read_exact(&mut buf).unwrap();
         assert_eq!(&buf[..], SERVER_FULL_ERROR_MESSAGE);
-        assert_eq!(server.connections.len(), 10);
+        assert_eq!(server.connections.len(), MAX_CONNECTIONS);
         {
             // Drop this stream.
             let _refused_stream = sockets.pop().unwrap();
         }
-        assert_eq!(server.connections.len(), 10);
+        assert_eq!(server.connections.len(), MAX_CONNECTIONS);
 
         // Check that the server detects a connection shutdown.
         let sock: &UnixStream = sockets.get(0).unwrap();
         sock.shutdown(Shutdown::Both).unwrap();
         assert!(server.requests().unwrap().is_empty());
         // Server should drop a closed connection.
-        assert_eq!(server.connections.len(), 9);
+        assert_eq!(server.connections.len(), MAX_CONNECTIONS - 1);
 
         // Close the backing FD of this connection by dropping
         // it out of scope.
@@ -1031,7 +980,7 @@ mod tests {
         }
         assert!(server.requests().unwrap().is_empty());
         // Server should drop a closed connection.
-        assert_eq!(server.connections.len(), 8);
+        assert_eq!(server.connections.len(), MAX_CONNECTIONS - 2);
 
         let sock: &UnixStream = sockets.get(1).unwrap();
         // Close both the read and write sides of the socket
@@ -1040,7 +989,7 @@ mod tests {
         sock.shutdown(Shutdown::Write).unwrap();
         assert!(server.requests().unwrap().is_empty());
         // Server should drop a closed connection.
-        assert_eq!(server.connections.len(), 7);
+        assert_eq!(server.connections.len(), MAX_CONNECTIONS - 3);
     }
 
     #[test]
@@ -1082,6 +1031,8 @@ mod tests {
                          Content-Type: application/json\r\n\r\nwhatever body",
             )
             .unwrap();
+        assert!(server.requests().unwrap().is_empty());
+        assert!(server.requests().unwrap().is_empty());
     }
 
     #[test]
@@ -1110,9 +1061,11 @@ mod tests {
 
         first_socket.shutdown(std::net::Shutdown::Both).unwrap();
         assert!(server.requests().unwrap().is_empty());
+        assert_eq!(server.connections.len(), 1);
         let mut second_socket = UnixStream::connect(path_to_socket.as_path()).unwrap();
         second_socket.set_nonblocking(true).unwrap();
         assert!(server.requests().unwrap().is_empty());
+        assert_eq!(server.connections.len(), 2);
 
         server
             .enqueue_responses(vec![server_request.process(|_request| {
@@ -1124,7 +1077,7 @@ mod tests {
             .unwrap();
 
         // assert!(server.requests().unwrap().is_empty());
-        assert_eq!(server.connections.len(), 1);
+        assert_eq!(server.connections.len(), 2);
         let mut buf: [u8; 1024] = [0; 1024];
         assert!(second_socket.read(&mut buf[..]).is_err());
 
@@ -1138,6 +1091,7 @@ mod tests {
         let mut req_vec = server.requests().unwrap();
         let second_server_request = req_vec.remove(0);
 
+        assert_eq!(server.connections.len(), 1);
         assert_eq!(
             second_server_request.request,
             Request::try_from(
@@ -1162,5 +1116,64 @@ mod tests {
         assert!(second_socket.read(&mut buf[..]).unwrap() > 0);
         second_socket.shutdown(std::net::Shutdown::Both).unwrap();
         assert!(server.requests().is_ok());
+    }
+
+    #[test]
+    fn test_wait_two_messages() {
+        let path_to_socket = get_temp_socket_file();
+
+        let mut server = HttpServer::new(path_to_socket.as_path()).unwrap();
+        server.start_server().unwrap();
+
+        // Test one incoming connection.
+        let mut socket = UnixStream::connect(path_to_socket.as_path()).unwrap();
+        assert!(server.requests().unwrap().is_empty());
+
+        socket
+            .write_all(
+                b"PATCH /machine-config HTTP/1.1\r\n\
+                         Content-Length: 13\r\n\
+                         Content-Type: application/json\r\n\r\nwhatever body",
+            )
+            .unwrap();
+
+        let mut req_vec = server.requests().unwrap();
+        let server_request = req_vec.remove(0);
+
+        socket
+            .write_all(
+                b"PATCH /machine-config HTTP/1.1\r\n\
+                         Content-Length: 13\r\n\
+                         Content-Type: application/json\r\n\r\nwhatever body",
+            )
+            .unwrap();
+
+        server
+            .respond(server_request.process(|_request| {
+                let mut response = Response::new(Version::Http11, StatusCode::OK);
+                let response_body = b"response body";
+                response.set_body(Body::new(response_body.to_vec()));
+                response
+            }))
+            .unwrap();
+        assert!(server.requests().unwrap().is_empty());
+
+        let mut buf: [u8; 1024] = [0; 1024];
+        assert!(socket.read(&mut buf[..]).unwrap() > 0);
+
+        let mut req_vec = server.requests().unwrap();
+        let server_request = req_vec.remove(0);
+        server
+            .respond(server_request.process(|_request| {
+                let mut response = Response::new(Version::Http11, StatusCode::OK);
+                let response_body = b"response body";
+                response.set_body(Body::new(response_body.to_vec()));
+                response
+            }))
+            .unwrap();
+        assert!(server.requests().unwrap().is_empty());
+
+        let mut buf: [u8; 1024] = [0; 1024];
+        assert!(socket.read(&mut buf[..]).unwrap() > 0);
     }
 }

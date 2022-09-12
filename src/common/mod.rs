@@ -16,7 +16,7 @@ pub mod ascii {
 }
 
 ///Errors associated with a header that is invalid.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum HttpHeaderError {
     /// The header is misformatted.
     InvalidFormat(String),
@@ -65,7 +65,7 @@ impl Display for HttpHeaderError {
 }
 
 /// Errors associated with parsing the HTTP Request from a u8 slice.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum RequestError {
     /// No request was pending while the request body was being parsed.
     BodyWithoutPendingRequest,
@@ -197,7 +197,7 @@ impl Display for ServerError {
 /// assert_eq!(body.raw(), b"This is a test body.");
 /// assert_eq!(body.len(), 20);
 /// ```
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Body {
     /// Body of the HTTP message as bytes.
     pub body: Vec<u8>,
@@ -226,7 +226,7 @@ impl Body {
 }
 
 /// Supported HTTP Methods.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum Method {
     /// GET Method.
     Get,
@@ -298,7 +298,7 @@ impl Method {
 /// let version = Version::try_from(b"http/1.1");
 /// assert!(version.is_err());
 /// ```
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Version {
     /// HTTP/1.0
     Http10,
@@ -341,7 +341,7 @@ impl Version {
 }
 
 ///Errors associated with a sys errno
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SysError(i32);
 
 impl SysError {

@@ -26,7 +26,7 @@ pub(crate) fn find(bytes: &[u8], sequence: &[u8]) -> Option<usize> {
 /// Wrapper over HTTP URIs.
 ///
 /// The `Uri` can not be used directly and it is only accessible from an HTTP Request.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Uri {
     string: String,
 }
@@ -85,7 +85,7 @@ impl Uri {
 }
 
 /// Wrapper over an HTTP Request Line.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct RequestLine {
     method: Method,
     uri: Uri,

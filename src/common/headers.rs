@@ -78,7 +78,7 @@ impl Header {
 /// invalidate our request as we don't support the full set of HTTP/1.1 specification.
 /// Such header entries are "Transfer-Encoding: identity; q=0", which means a compression
 /// algorithm is applied to the body of the request, or "Expect: 103-checkpoint".
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Headers {
     /// The `Content-Length` header field tells us how many bytes we need to receive
     /// from the source after the headers.
@@ -306,7 +306,7 @@ impl Headers {
 }
 
 /// Wrapper over supported AcceptEncoding.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Encoding {}
 
 impl Encoding {
@@ -363,7 +363,7 @@ impl Encoding {
 }
 
 /// Wrapper over supported Media Types.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MediaType {
     /// Media Type: "text/plain".
     PlainText,
