@@ -1,3 +1,5 @@
+# v0.3.2
+- [#18](https://github.com/openanolis/dbs-uhttp/pull/18): retry if error 11(EAGAIN) is encountered
 
 # v0.3.0
 - [#16](https://github.com/openanolis/dbs-uhttp/pull/16): fixes several mio related bugs
