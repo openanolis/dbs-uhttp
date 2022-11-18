@@ -6,6 +6,8 @@ use std::io::{ErrorKind, Read, Write};
 use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
+use std::thread::sleep;
+use std::time::Duration;
 
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
@@ -114,6 +116,7 @@ impl<T: Read + Write + ScmSocket> ClientConnection<T> {
     fn read(&mut self) -> Result<Vec<Request>> {
         // Data came into the connection.
         let mut parsed_requests = vec![];
+        let mut retry_limit = 32;
         'out: loop {
             match self.connection.try_read() {
                 Err(ConnectionError::ConnectionClosed) => {
@@ -125,6 +128,13 @@ impl<T: Read + Write + ScmSocket> ClientConnection<T> {
                     return Ok(vec![]);
                 }
                 Err(ConnectionError::StreamReadError(inner)) => {
+                    #[cfg(target_os = "linux")]
+                    if inner.errno() == libc::EAGAIN && retry_limit > 0 {
+                        sleep(Duration::from_micros(20));
+                        retry_limit -= 1;
+                        continue;
+                    }
+
                     // Reading from the connection failed.
                     // We should try to write an error message regardless.
                     let mut internal_error_response =
